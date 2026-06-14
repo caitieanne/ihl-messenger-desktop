@@ -6,7 +6,6 @@ use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
-use tauri_plugin_opener::OpenerExt;
 
 fn show_main(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -20,13 +19,12 @@ fn show_main(app: &tauri::AppHandle) {
 // link that leaves the messenger (settings, notifications, profile, posting),
 // so those open in the browser while the messenger window stays put.
 #[tauri::command]
-fn open_external(app: tauri::AppHandle, url: String) {
-    let _ = app.opener().open_url(url, None::<&str>);
+fn open_external(url: String) {
+    let _ = opener::open(url);
 }
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         // Only one running instance — launching again focuses the window.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main(app);
