@@ -1,0 +1,81 @@
+name: Android
+
+# Build a sideloadable Android APK. Cut alongside a release by pushing a tag
+# (v*), or run manually. APKs are debug-signed so they install directly without
+# a keystore — proper release signing / Play Store can come later.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager --install "ndk;27.1.12297006"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.1.12297006" >> "$GITHUB_ENV"
+
+      - name: Install Rust + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Initialise Android project
+        run: npx tauri android init --ci
+
+      - name: Apply app icons
+        run: npx tauri icon icon-source.png
+
+      - name: Build APK (debug-signed, sideloadable)
+        run: npx tauri android build --apk --debug
+
+      - name: Collect APKs
+        id: apks
+        run: |
+          mkdir -p dist-apk
+          find src-tauri/gen/android -name "*.apk" -exec cp {} dist-apk/ \;
+          echo "Built APKs:"
+          ls -la dist-apk/
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ihl-messenger-android-apks
+          path: dist-apk/*.apk
+
+      - name: Attach APKs to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-apk/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

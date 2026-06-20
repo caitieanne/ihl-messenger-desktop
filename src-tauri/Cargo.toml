@@ -6,15 +6,25 @@ authors = ["Caitie Rage"]
 edition = "2021"
 rust-version = "1.77"
 
+# Library target is required for mobile (Android/iOS load the Rust as a lib).
+# rlib lets the desktop binary (main.rs) link it too.
+[lib]
+name = "ihl_messenger_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-single-instance = "2"
-opener = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Desktop-only deps: single-instance focusing and the system-browser opener are
+# not used on mobile (one fullscreen webview, OS-owned lifecycle).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+opener = "0.7"
 
 [profile.release]
 panic = "abort"
