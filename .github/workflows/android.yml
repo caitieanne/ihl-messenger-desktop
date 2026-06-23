@@ -1,8 +1,8 @@
 name: Android
 
 # Build a sideloadable Android APK. Cut alongside a release by pushing a tag
-# (v*), or run manually. APKs are debug-signed so they install directly without
-# a keystore — proper release signing / Play Store can come later.
+# (v*), or run manually. The APK is a signed release build, installable directly.
+# Play Store distribution can come later off the same keystore.
 on:
   push:
     tags:
@@ -55,24 +55,43 @@ jobs:
       - name: Apply app icons
         run: npx tauri icon icon-source.png
 
-      - name: Build APK (debug-signed, sideloadable)
-        run: npx tauri android build --apk --debug
+      - name: Build release APK (optimised, unsigned)
+        run: npx tauri android build --apk
 
-      - name: Collect APKs
-        id: apks
+      - name: Sign APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/*/ | sort -V | tail -1)
+          echo "Using build-tools: $BT"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/ks.jks
+          UNSIGNED=$(find src-tauri/gen/android -name "*-release-unsigned.apk" | head -1)
+          echo "Unsigned APK: $UNSIGNED"
           mkdir -p dist-apk
-          find src-tauri/gen/android -name "*.apk" -exec cp {} dist-apk/ \;
-          echo "Built APKs:"
+          "${BT}zipalign" -f -p 4 "$UNSIGNED" /tmp/aligned.apk
+          OUT="dist-apk/IHL.Messenger_${VERSION}_universal.apk"
+          "${BT}apksigner" sign \
+            --ks /tmp/ks.jks \
+            --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD}" \
+            --key-pass "pass:${ANDROID_KEY_PASSWORD}" \
+            --ks-key-alias "${ANDROID_KEY_ALIAS}" \
+            --out "$OUT" /tmp/aligned.apk
+          "${BT}apksigner" verify --verbose "$OUT"
+          rm -f /tmp/ks.jks
           ls -la dist-apk/
 
-      - name: Upload APK artifacts
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ihl-messenger-android-apks
+          name: ihl-messenger-android
           path: dist-apk/*.apk
 
-      - name: Attach APKs to release
+      - name: Attach APK to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
